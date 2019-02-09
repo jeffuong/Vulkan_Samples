@@ -8,6 +8,11 @@ ODIR = ../../build
 
 ifdef config
 DEF_CONFIG = -D_$(config)
+ifeq ($(config),DEBUG)
+CFLAGS := $(CFLAGS) -g
+endif
+else
+DEF_CONFIG = -D_RELEASE
 endif
 
 hello_triangle: hello_triangle.cpp
