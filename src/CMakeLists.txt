@@ -90,6 +90,7 @@ ENDIF( EX_PLATFORM EQUAL 64 )
 
 FIND_PACKAGE(Vulkan REQUIRED)
 #FIND_PACKAGE(OpenGL REQUIRED)
+FIND_PACKAGE(SDL2 REQUIRED)
 
 ################FINDING LIBRARY PACKAGES###########################
 #######################GCC FLAGS##############################
