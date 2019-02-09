@@ -90,10 +90,9 @@ SET_TARGET_PROPERTIES (${ProjectName} PROPERTIES
 #######################FINDING LIBS CUSTOM###################################
 #######################FINDING LIBS CUSTOM###################################
 TARGET_LINK_LIBRARIES(${ProjectName} -lpthread)
-TARGET_LINK_LIBRARIES(${ProjectName} -lSDL2)
+TARGET_LINK_LIBRARIES(${ProjectName} -lglfw)
+#TARGET_LINK_LIBRARIES(${ProjectName} -lSDL2)
 #TARGET_LINK_LIBRARIES(${ProjectName} -lX11)
-#TARGET_LINK_LIBRARIES(${ProjectName} Electron)
-#TARGET_LINK_LIBRARIES(${ProjectName} glslParser)
 TARGET_LINK_LIBRARIES(${ProjectName} ${VULKAN_LIBRARY})
 #TARGET_LINK_LIBRARIES(${ProjectName} ${OPENGL_LIBRARY})
 #######################FINDING LIBS CUSTOM###################################
