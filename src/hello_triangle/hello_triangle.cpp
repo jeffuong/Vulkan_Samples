@@ -16,6 +16,7 @@ int g_wndHeight = 600;
 
 //Graphics
 VkInstance g_instance;
+VkDebugUtilsMessengerEXT g_debugMessenger;
 
 void glfwErrorCallback(int code, const char *str)
 {
@@ -65,6 +66,78 @@ void queryExtensions(std::vector<VkExtensionProperties> &extensions)
         DBGLOG("\t%s v%u", ext.extensionName, ext.specVersion);
 }
 
+const char *stdValidationLayers = "VK_LAYER_LUNARG_standard_validation";
+
+bool checkValidationLayerSupport()
+{
+    uint32_t layerCount = 0;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+    if(layerCount == 0)
+    {
+        DBGLOG("No validation layers installed.");
+        return false;
+    }
+
+    std::vector<VkLayerProperties> available_layers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, available_layers.data());
+
+    bool foundStdValidationLayer = false;
+    DBGLOG("Available validation layers:")
+    for(const VkLayerProperties &layer : available_layers)
+    {
+        DBGLOG("\t%s v%u s%u", layer.layerName, layer.implementationVersion, layer.specVersion);
+        DBGLOG("\t\t%s", layer.description);
+        if(strcmp(layer.layerName, stdValidationLayers) == 0)
+            foundStdValidationLayer = true;
+    }
+
+    return foundStdValidationLayer;
+}
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData) 
+{
+    #define VALIDATION_MSG "validation layer:"
+    switch (messageSeverity)
+    {
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+            //Only print in debug mode
+            DBGLOG(VALIDATION_MSG " %s", pCallbackData->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+            printf(VALIDATION_MSG " %s\n", pCallbackData->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+            printf("\x1B[33m" VALIDATION_MSG " %s\n \x1B[0m", pCallbackData->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+            printf("\x1B[31m" VALIDATION_MSG " %s\n \x1B[0m", pCallbackData->pMessage);
+            break;
+        default:
+            break;
+    }
+
+    return VK_FALSE;
+}
+
+void getRequiredExtensions(std::vector<const char *> &extensions)
+{
+    uint32_t numExtensions;
+    const char **glfw_extensions = glfwGetRequiredInstanceExtensions(&numExtensions);
+
+    extensions.clear();
+    extensions.reserve(numExtensions + 1);
+    for(uint32_t i = 0; i < numExtensions; ++i)
+        extensions.push_back(glfw_extensions[i]);
+
+#ifdef _DEBUG
+    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+#endif
+}
+
 int createInstance(const char *appName)
 {
     std::vector<VkExtensionProperties> available_extensions;
@@ -82,17 +155,16 @@ int createInstance(const char *appName)
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
 
-    const char **extensions;
-    uint32_t numExtensions;
-    extensions = glfwGetRequiredInstanceExtensions(&numExtensions);
+    std::vector<const char *> required_extensions;
+    getRequiredExtensions(required_extensions);
 
     //Ensure all the extensions required are supported
-    for(uint32_t i = 0; i < numExtensions; ++i)
+    for(const char *required_ext : required_extensions)
     {
         bool ext_found = false;
         for(const VkExtensionProperties &ext : available_extensions)
         {
-            if(strcmp(ext.extensionName, extensions[i]) == 0)
+            if(strcmp(ext.extensionName, required_ext) == 0)
             {
                 ext_found = true;
                 break;
@@ -100,21 +172,69 @@ int createInstance(const char *appName)
         }
         if(!ext_found)
         {
-            DBGLOG("Missing required extension: %s", extensions[i]);
+            DBGLOG("Missing required extension: %s", required_ext);
             return EXIT_FAILURE;
         }
     }
 
-    createInfo.enabledExtensionCount = numExtensions;
-    createInfo.ppEnabledExtensionNames = extensions;
+    createInfo.enabledExtensionCount = required_extensions.size();
+    createInfo.ppEnabledExtensionNames = required_extensions.data();
 
-    createInfo.enabledLayerCount = 0; //We'll enable this later
+    //Enable validation layers, if possible, in debug builds
+#ifdef _DEBUG
+    if(checkValidationLayerSupport())
+    {
+        DBGLOG("Enabled standard LunarG validation layer");
+        createInfo.enabledLayerCount = 1;
+        createInfo.ppEnabledLayerNames = &stdValidationLayers;
+    }
+#else
+    createInfo.enabledLayerCount = 0; 
+#endif
 
     VkResult res = vkCreateInstance(&createInfo, nullptr, &g_instance);
     if(res != VK_SUCCESS)
         DBGLOG("Vulkan instance creation failed");
 
     return res == VK_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+void setupDebugCallback()
+{
+    VkDebugUtilsMessengerCreateInfoEXT createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    createInfo.messageSeverity = 
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | 
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    createInfo.messageType = 
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.pfnUserCallback = debugCallback;
+    createInfo.pUserData = nullptr;
+
+#define CREATE_DEBUGUTILSMESSENGER_NAME "vkCreateDebugUtilsMessengerEXT"
+    PFN_vkCreateDebugUtilsMessengerEXT pCreateDebugUtilsMessenger = 
+        (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(g_instance, CREATE_DEBUGUTILSMESSENGER_NAME);
+
+    if(pCreateDebugUtilsMessenger)
+    {
+        VkResult res = pCreateDebugUtilsMessenger(g_instance, &createInfo, nullptr, &g_debugMessenger);
+        if(res != VK_SUCCESS)
+        {
+            DBGLOG("Failed to create debug messenger");
+        }
+        else
+        {
+            DBGLOG("Debug messenger created");
+        }
+    }
+    else
+    {
+        DBGLOG("Failed tp load debug messenger creation function");
+    }
 }
 
 int initVulkan(int argc, const char *argv[])
@@ -133,6 +253,10 @@ int initVulkan(int argc, const char *argv[])
     ret = createInstance(argv[0] + i);
     if(ret != EXIT_SUCCESS)
         return ret;
+
+#ifdef _DEBUG
+    setupDebugCallback();
+#endif
 
     DBGLOG("Finished initialization");
     return ret;
