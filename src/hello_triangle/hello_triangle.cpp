@@ -4,9 +4,18 @@
 #include <stdio.h>
 #include <string.h>
 #include <vector>
+#include <map>
 #include <cstdlib>
 
 #include "../common/debug.h"
+
+
+struct QueueFamilies
+{
+    uint32_t graphicsQueue; 
+    bool hasGraphicsQueue = false;;
+    //Add other queue families in the future
+};
 
 //Resources
 //Window
@@ -17,6 +26,7 @@ int g_wndHeight = 600;
 //Graphics
 VkInstance g_instance;
 VkDebugUtilsMessengerEXT g_debugMessenger;
+VkPhysicalDevice g_physicalDevice = VK_NULL_HANDLE;
 
 void glfwErrorCallback(int code, const char *str)
 {
@@ -254,6 +264,104 @@ void releaseDebugCallback()
         DBGLOG("Debug messenger destroy function not found");
 }
 
+int findQueueFamilies(VkPhysicalDevice device, QueueFamilies *queueFamilies)
+{
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    if(queueFamilyCount == 0)
+    {
+        DBGLOG("No queue families found");
+        return EXIT_FAILURE;
+    }
+
+    std::vector<VkQueueFamilyProperties> props(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, props.data());
+
+    //Take the first graphics queue
+    uint32_t f = 0;
+    for(const VkQueueFamilyProperties &fam : props)
+    {
+        if(fam.queueCount > 0 && fam.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        {
+            queueFamilies->graphicsQueue = f;
+            queueFamilies->hasGraphicsQueue = true;
+            break;
+        }
+    }
+
+    if(queueFamilies->hasGraphicsQueue)
+        return EXIT_SUCCESS;
+
+    DBGLOG("No graphics queue supported on this device");
+    return EXIT_FAILURE;
+}
+
+int evalDeviceScore(VkPhysicalDevice device)
+{
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(device, &props);
+    VkPhysicalDeviceFeatures features;
+    vkGetPhysicalDeviceFeatures(device, &features);
+
+    int score = 0;
+
+    //Ensure that this device supports a graphics queue
+    QueueFamilies queueFamilies;
+    //Score 0 if it doesn't as this is a mandatory requirement
+    if(findQueueFamilies(device, &queueFamilies) != EXIT_SUCCESS)
+        return 0;
+
+    //Favor discrete GPUs
+    if(props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+        score += 1000;
+
+    //We like big textures
+    score += props.limits.maxImageDimension2D;
+
+    //Support for optional shader types is useful
+    if(features.tessellationShader)
+        score += 100;
+    if(features.geometryShader)
+        score += 10;
+
+    DBGLOG("\t%s\tscore: %d", props.deviceName, score);
+    return score;
+}
+
+int pickPhysicalDevice()
+{
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(g_instance, &deviceCount, nullptr);
+    if(deviceCount == 0)
+    {
+        DBGLOG("No physical device found.");
+        return EXIT_FAILURE;
+    }
+
+    std::vector<VkPhysicalDevice> deviceList(deviceCount);
+    vkEnumeratePhysicalDevices(g_instance, &deviceCount, deviceList.data());
+
+    //Sort devices by their scores
+    std::map<int, VkPhysicalDevice> sortedDevices;
+
+    DBGLOG("Physical device scores:");
+    for(const VkPhysicalDevice &dev : deviceList)
+    {
+        sortedDevices[evalDeviceScore(dev)] = dev;
+    }
+
+    if(sortedDevices.rbegin()->first > 0)
+    {
+        g_physicalDevice = sortedDevices.rbegin()->second;
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(g_physicalDevice, &props);
+        DBGLOG("Selected device: %s", props.deviceName);
+        return EXIT_SUCCESS;
+    }
+    DBGLOG("No suitable physical device found.");
+    return EXIT_FAILURE;
+}
+
 int initVulkan(int argc, const char *argv[])
 {
     //Strip out path from file name
@@ -274,6 +382,10 @@ int initVulkan(int argc, const char *argv[])
 #ifdef _DEBUG
     setupDebugCallback();
 #endif
+
+    ret = pickPhysicalDevice();
+    if(ret != EXIT_SUCCESS)
+        return ret;
 
     DBGLOG("Finished initialization");
     return ret;
