@@ -19,7 +19,7 @@ pipeline {
       steps {
         checkout scm
         dir("src/hello_triangle") {
-          sh 'make test'
+          // sh 'make test'
           sh 'make clean'
         }
       }
