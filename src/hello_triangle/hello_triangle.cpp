@@ -117,6 +117,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
             printf("\x1B[31m" VALIDATION_MSG " %s\n \x1B[0m", pCallbackData->pMessage);
             break;
         default:
+            //Normal print, in case none of the above cases were hit
+            printf(VALIDATION_MSG " %s\n", pCallbackData->pMessage);
             break;
     }
 
@@ -237,6 +239,21 @@ void setupDebugCallback()
     }
 }
 
+void releaseDebugCallback()
+{
+    #define DESTROY_DEBUGUTILSMESSENGER_NAME "vkDestroyDebugUtilsMessengerEXT"
+    PFN_vkDestroyDebugUtilsMessengerEXT pDestroyDebugUtils = 
+        (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(g_instance, DESTROY_DEBUGUTILSMESSENGER_NAME);
+
+    if(pDestroyDebugUtils)
+    {
+        pDestroyDebugUtils(g_instance, g_debugMessenger, nullptr);
+        DBGLOG("Debug messenger destroyed");
+    }
+    else
+        DBGLOG("Debug messenger destroy function not found");
+}
+
 int initVulkan(int argc, const char *argv[])
 {
     //Strip out path from file name
@@ -274,6 +291,10 @@ int updateLoop()
 void releaseVulkan()
 {
     //release resources
+
+#ifdef _DEBUG
+    releaseDebugCallback();
+#endif
 
     destroyWindow();
     DBGLOG("Resources released");
